@@ -24,7 +24,6 @@
 
 #include "ipsec.h"
 #include "spi_gen.h"
-#include "port_gen.h"
 
 #include "../../core/dprint.h"
 #include "../../core/mem/pkg.h"
@@ -175,7 +174,7 @@ int add_sa(struct mnl_socket* nl_sock, const struct ip_addr *src_addr_param, con
     if(strncasecmp(r_alg.s, "hmac-md5-96", r_alg.len) == 0) {
         strcpy(l_auth_algo->alg_name,"md5");
     }
-    else if(strncasecmp(r_alg.s, "hmac-sha1-96", r_alg.len) == 0) {
+    else if(strncasecmp(r_alg.s, "hmac-sha-1-96", r_alg.len) == 0) {
         strcpy(l_auth_algo->alg_name,"sha1");
     } else {
         // set default algorithm to sha1
@@ -784,13 +783,7 @@ static int delete_unused_sa_cb(const struct nlmsghdr *nlh, void *data)
 
     // NOTE: Release the Proxy SPIs and Ports only here. Do not release the same SPIs and ports in delete unsused policy callback.
     // Release SPIs
-    release_spi(ipsec.spi_pc);
-    release_spi(ipsec.spi_ps);
-
-    // Release the client and the server ports
-    release_cport(ipsec.port_pc);
-    release_sport(ipsec.port_ps);
-
+    release_spi(ipsec.spi_pc , ipsec.spi_ps , ipsec.port_pc , ipsec.port_ps);
     return MNL_CB_OK;
 }
 
