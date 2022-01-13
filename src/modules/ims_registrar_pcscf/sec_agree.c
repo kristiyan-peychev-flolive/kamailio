@@ -161,7 +161,7 @@ static security_t* parse_sec_agree(struct hdr_field* h)
     i = 0;
     while(i <= body.len) {
         //look for end of buffer or parameter separator
-        if(i == body.len || body.s[i] == ';' ) {
+        if(i == body.len || body.s[i] == ';' || body.s[i] == ',' ) {
             if(name.len) {
                 // if(name.len) => a param name is parsed
                 // and now i points to the end of its value
