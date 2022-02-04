@@ -84,6 +84,10 @@ static int w_ht_iterator_rm(struct sip_msg* msg, char* iname, char* foo);
 static int w_ht_iterator_sets(struct sip_msg* msg, char* iname, char* val);
 static int w_ht_iterator_seti(struct sip_msg* msg, char* iname, char* val);
 static int w_ht_iterator_setex(struct sip_msg* msg, char* iname, char* val);
+static int w_ht_setxs(sip_msg_t *msg, char *htname, char *itname,
+		char *itval, char *exval);
+static int w_ht_setxi(sip_msg_t *msg, char *htname, char *itname,
+		char *itval, char *exval);
 
 int ht_param(modparam_t type, void* val);
 
@@ -152,6 +156,10 @@ static cmd_export_t cmds[]={
 		fixup_free_spve_igp, ANY_ROUTE},
 	{"sht_iterator_setex",	(cmd_function)w_ht_iterator_setex,	2, fixup_spve_igp,
 		fixup_free_spve_igp, ANY_ROUTE},
+	{"sht_setxs",	(cmd_function)w_ht_setxs,	4, fixup_sssi,
+		fixup_free_sssi, ANY_ROUTE},
+	{"sht_setxi",	(cmd_function)w_ht_setxi,	4, fixup_ssii,
+		fixup_free_ssii, ANY_ROUTE},
 
 	{"bind_htable",     (cmd_function)bind_htable,     0, 0, 0,
 		ANY_ROUTE},
@@ -923,7 +931,7 @@ static int w_ht_iterator_setex(struct sip_msg* msg, char* iname, char* val)
 		return -1;
 	}
 
-	return ki_ht_iterator_seti(msg, &siname, ival);
+	return ki_ht_iterator_setex(msg, &siname, ival);
 }
 
 static int ki_ht_slot_xlock(sip_msg_t *msg, str *htname, str *skey, int lmode)
@@ -1305,6 +1313,37 @@ static int ki_ht_setxs(sip_msg_t *msg, str *htname, str *itname, str *itval,
 /**
  *
  */
+static int w_ht_setxs(sip_msg_t *msg, char *htname, char *itname,
+		char *itval, char *exval)
+{
+	str shtname;
+	str sitname;
+	str sitval;
+	int iexval;
+
+	if(fixup_get_svalue(msg, (gparam_t*)htname, &shtname)<0 || shtname.len<=0) {
+		LM_ERR("cannot get htable name\n");
+		return -1;
+	}
+	if(fixup_get_svalue(msg, (gparam_t*)itname, &sitname)<0 || sitname.len<=0) {
+		LM_ERR("cannot get item name\n");
+		return -1;
+	}
+	if(fixup_get_svalue(msg, (gparam_t*)itval, &sitval)<0) {
+		LM_ERR("cannot get item value\n");
+		return -1;
+	}
+	if(fixup_get_ivalue(msg, (gparam_t*)exval, &iexval)<0) {
+		LM_ERR("cannot get expire value\n");
+		return -1;
+	}
+
+	return ki_ht_setxs(msg, &shtname, &sitname, &sitval, iexval);
+}
+
+/**
+ *
+ */
 static int ki_ht_setxi(sip_msg_t *msg, str *htname, str *itname, int itval,
 	int exval)
 {
@@ -1343,6 +1382,37 @@ static int ki_ht_setxi(sip_msg_t *msg, str *htname, str *itname, int itval,
 	}
 
 	return 0;
+}
+
+/**
+ *
+ */
+static int w_ht_setxi(sip_msg_t *msg, char *htname, char *itname,
+		char *itval, char *exval)
+{
+	str shtname;
+	str sitname;
+	int nitval;
+	int iexval;
+
+	if(fixup_get_svalue(msg, (gparam_t*)htname, &shtname)<0 || shtname.len<=0) {
+		LM_ERR("cannot get htable name\n");
+		return -1;
+	}
+	if(fixup_get_svalue(msg, (gparam_t*)itname, &sitname)<0 || sitname.len<=0) {
+		LM_ERR("cannot get item name\n");
+		return -1;
+	}
+	if(fixup_get_ivalue(msg, (gparam_t*)itval, &nitval)<0) {
+		LM_ERR("cannot get item value\n");
+		return -1;
+	}
+	if(fixup_get_ivalue(msg, (gparam_t*)exval, &iexval)<0) {
+		LM_ERR("cannot get expire value\n");
+		return -1;
+	}
+
+	return ki_ht_setxi(msg, &shtname, &sitname, nitval, iexval);
 }
 
 #define KSR_HT_KEMI_NOINTVAL -255
@@ -1411,6 +1481,10 @@ static const char* htable_sets_doc[2] = {
 };
 static const char* htable_seti_doc[2] = {
 	"Set one key in a hash table to an integer value.",
+	0
+};
+static const char* htable_setex_doc[2] = {
+	"Set expire in a hash table for the item referenced by key.",
 	0
 };
 static const char* htable_list_doc[2] = {
@@ -1608,6 +1682,35 @@ static void htable_rpc_seti(rpc_t* rpc, void* c) {
 		return;
 	}
 	rpc->rpl_printf(c, "Ok. Key set to new value.");
+	return;
+}
+
+/*! \brief RPC htable.setex command to set expire for one item */
+static void htable_rpc_setex(rpc_t* rpc, void* c) {
+	str htname, itname;
+	int exval;
+	ht_t *ht;
+
+	if (rpc->scan(c, "SS.d", &htname, &itname, &exval) < 3) {
+		rpc->fault(c, 500,
+				"Not enough parameters (htable name, item name and expire)");
+		return;
+	}
+
+	/* check if htable exists */
+	ht = ht_get_table(&htname);
+	if (!ht) {
+		rpc->fault(c, 500, "No such htable");
+		return;
+	}
+
+
+	if(ki_ht_setex(NULL, &htname, &itname, exval)<0) {
+		rpc->fault(c, 500, "Failed to set the item");
+		return;
+	}
+
+	rpc->rpl_printf(c, "Ok");
 	return;
 }
 
@@ -1973,6 +2076,7 @@ rpc_export_t htable_rpc[] = {
 	{"htable.get", htable_rpc_get, htable_get_doc, 0},
 	{"htable.sets", htable_rpc_sets, htable_sets_doc, 0},
 	{"htable.seti", htable_rpc_seti, htable_seti_doc, 0},
+	{"htable.setex", htable_rpc_setex, htable_setex_doc, 0},
 	{"htable.listTables", htable_rpc_list, htable_list_doc, RET_ARRAY},
 	{"htable.reload", htable_rpc_reload, htable_reload_doc, 0},
 	{"htable.store", htable_rpc_store, htable_store_doc, 0},

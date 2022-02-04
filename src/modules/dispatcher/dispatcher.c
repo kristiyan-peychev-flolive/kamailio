@@ -952,6 +952,16 @@ static int ds_warn_fixup(void **param, int param_no)
 
 static int ds_reload(sip_msg_t *msg)
 {
+	if(ds_rpc_reload_time==NULL) {
+		LM_ERR("not ready for reload\n");
+		return -1;
+	}
+	if(*ds_rpc_reload_time!=0 && *ds_rpc_reload_time > time(NULL) - ds_reload_delta) {
+		LM_ERR("ongoing reload\n");
+		return -1;
+	}
+	*ds_rpc_reload_time = time(NULL);
+
 	if(!ds_db_url.s) {
 		if(ds_load_list(dslistfile) != 0)
 			LM_ERR("Error reloading from list\n");
@@ -1123,22 +1133,21 @@ static int ds_parse_reply_codes()
 	int *ds_ping_reply_codes_new = NULL;
 	int *ds_ping_reply_codes_old = NULL;
 
-	/* Validate String: */
+	/* validate input string */
 	if(cfg_get(dispatcher, dispatcher_cfg, ds_ping_reply_codes_str).s == 0
 			|| cfg_get(dispatcher, dispatcher_cfg, ds_ping_reply_codes_str).len
 					   <= 0)
 		return 0;
 
-	/* parse_params will modify the string pointer of .s, so we need to make a copy. */
+	/* parse_params() updates the string pointer of .s -- make a copy */
 	input.s = cfg_get(dispatcher, dispatcher_cfg, ds_ping_reply_codes_str).s;
 	input.len =
 			cfg_get(dispatcher, dispatcher_cfg, ds_ping_reply_codes_str).len;
 
-	/* Parse the parameters: */
 	if(parse_params(&input, CLASS_ANY, 0, &params_list) < 0)
 		return -1;
 
-	/* Get the number of entries in the list */
+	/* get the number of entries in the list */
 	for(pit = params_list; pit; pit = pit->next) {
 		if(pit->name.len == 4 && strncasecmp(pit->name.s, "code", 4) == 0) {
 			str2sint(&pit->body, &code);
@@ -1148,10 +1157,10 @@ static int ds_parse_reply_codes()
 				  && strncasecmp(pit->name.s, "class", 5) == 0) {
 			str2sint(&pit->body, &code);
 			if((code >= 1) && (code < 7))
-				list_size += 100;
+				list_size += 1;
 		}
 	}
-	LM_DBG("Should be %d Destinations.\n", list_size);
+	LM_DBG("expecting %d reply codes and classes\n", list_size);
 
 	if(list_size > 0) {
 		/* Allocate Memory for the new list: */
@@ -1166,15 +1175,14 @@ static int ds_parse_reply_codes()
 		for(pit = params_list; pit; pit = pit->next) {
 			if(pit->name.len == 4 && strncasecmp(pit->name.s, "code", 4) == 0) {
 				str2sint(&pit->body, &code);
-				if((code >= 100) && (code < 700))
+				if((code >= 100) && (code < 700)) {
 					ds_ping_reply_codes_new[pos++] = code;
+				}
 			} else if(pit->name.len == 5
 					  && strncasecmp(pit->name.s, "class", 5) == 0) {
 				str2sint(&pit->body, &code);
 				if((code >= 1) && (code < 7)) {
-					/* Add every code from this class, e.g. 100 to 199 */
-					for(i = (code * 100); i <= ((code * 100) + 99); i++)
-						ds_ping_reply_codes_new[pos++] = i;
+					ds_ping_reply_codes_new[pos++] = code;
 				}
 			}
 		}
@@ -1183,30 +1191,25 @@ static int ds_parse_reply_codes()
 	}
 	free_params(params_list);
 
-	/* More reply-codes? Change Pointer and then set number of codes. */
 	if(list_size > *ds_ping_reply_codes_cnt) {
-		// Copy Pointer
+		/* if more reply-codes -- change pointer and then set number of codes */
 		ds_ping_reply_codes_old = *ds_ping_reply_codes;
 		*ds_ping_reply_codes = ds_ping_reply_codes_new;
-		// Done: Set new Number of entries:
 		*ds_ping_reply_codes_cnt = list_size;
-		// Free the old memory area:
 		if(ds_ping_reply_codes_old)
 			shm_free(ds_ping_reply_codes_old);
-		/* Less or equal? Set the number of codes first. */
 	} else {
-		// Done:
+		/* less or equal reply codea -- set the number of codes first */
 		*ds_ping_reply_codes_cnt = list_size;
-		// Copy Pointer
 		ds_ping_reply_codes_old = *ds_ping_reply_codes;
 		*ds_ping_reply_codes = ds_ping_reply_codes_new;
-		// Free the old memory area:
 		if(ds_ping_reply_codes_old)
 			shm_free(ds_ping_reply_codes_old);
 	}
 	/* Print the list as INFO: */
 	for(i = 0; i < *ds_ping_reply_codes_cnt; i++) {
-		LM_DBG("Dispatcher: Now accepting Reply-Code %d (%d/%d) as valid\n",
+		LM_DBG("accepting reply %s %d (%d/%d) as valid\n",
+				((*ds_ping_reply_codes)[i]/10)?"code":"class",
 				(*ds_ping_reply_codes)[i], (i + 1), *ds_ping_reply_codes_cnt);
 	}
 	return 0;
@@ -1217,8 +1220,17 @@ int ds_ping_check_rplcode(int code)
 	int i;
 
 	for(i = 0; i < *ds_ping_reply_codes_cnt; i++) {
-		if((*ds_ping_reply_codes)[i] == code)
-			return 1;
+		if((*ds_ping_reply_codes)[i] / 10) {
+			/* reply code */
+			if((*ds_ping_reply_codes)[i] == code) {
+				return 1;
+			}
+		} else {
+			/* reply class */
+			if(((*ds_ping_reply_codes)[i] / 100) == code) {
+				return 1;
+			}
+		}
 	}
 
 	return 0;
@@ -1857,6 +1869,18 @@ static void dispatcher_rpc_add(rpc_t *rpc, void *ctx)
 	str dest;
 	str attrs = STR_NULL;
 
+	if(ds_rpc_reload_time==NULL) {
+		LM_ERR("Not ready for rebuilding destinations list\n");
+		rpc->fault(ctx, 500, "Not ready for reload");
+		return;
+	}
+	if(*ds_rpc_reload_time!=0 && *ds_rpc_reload_time > time(NULL) - ds_reload_delta) {
+		LM_ERR("ongoing reload\n");
+		rpc->fault(ctx, 500, "Ongoing reload");
+		return;
+	}
+	*ds_rpc_reload_time = time(NULL);
+
 	flags = 0;
 
 	nparams = rpc->scan(ctx, "dS*dS", &group, &dest, &flags, &attrs);
@@ -1887,6 +1911,18 @@ static void dispatcher_rpc_remove(rpc_t *rpc, void *ctx)
 {
 	int group;
 	str dest;
+
+	if(ds_rpc_reload_time==NULL) {
+		LM_ERR("Not ready for rebuilding destinations list\n");
+		rpc->fault(ctx, 500, "Not ready for reload");
+		return;
+	}
+	if(*ds_rpc_reload_time!=0 && *ds_rpc_reload_time > time(NULL) - ds_reload_delta) {
+		LM_ERR("ongoing reload\n");
+		rpc->fault(ctx, 500, "Ongoing reload");
+		return;
+	}
+	*ds_rpc_reload_time = time(NULL);
 
 	if(rpc->scan(ctx, "dS", &group, &dest) < 2) {
 		rpc->fault(ctx, 500, "Invalid Parameters");
