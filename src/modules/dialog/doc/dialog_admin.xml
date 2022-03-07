@@ -1299,7 +1299,33 @@ modparam("dialog", "send_bye", 1)
 </programlisting>
 		</example>
 	</section>
-
+	<section id="dialog.p.dlg_filter_mode">
+		<title><varname>dlg_filter_mode</varname> (int)</title>
+		<para>
+			Set dialog fitering mode, which can specify what dialogs are processed.
+			Its value can be a combination (the sum) of following flags:
+		</para>
+		<itemizedlist>
+			<listitem><para>
+				<emphasis>1</emphasis> - do not send keepalives and do not
+				execute timeout function if dialog is not local (if the
+				associated bind address is not a local socket).
+			</para></listitem>
+		</itemizedlist>
+		<para>
+		<emphasis>
+			Default value is <quote>0</quote>.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>dlg_filter_mode</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("dialog", "dlg_filter_mode", 1)
+...
+</programlisting>
+		</example>
+	</section>
 	<section id="dialog.p.wait_ack">
 		<title><varname>wait_ack</varname> (int)</title>
 		<para>
