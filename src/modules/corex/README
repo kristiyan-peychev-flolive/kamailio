@@ -72,7 +72,8 @@ Muhammad Shahzad Shafi
               5.5. corex.shm_summary
               5.6. corex.pkg_summary
               5.7. corex.shm.info
-              5.8. corex.shm.stats
+              5.8. corex.shm.report
+              5.9. corex.shm.stats
 
         6. Event Routes
 
@@ -171,7 +172,8 @@ Chapter 1. Admin Guide
         5.5. corex.shm_summary
         5.6. corex.pkg_summary
         5.7. corex.shm.info
-        5.8. corex.shm.stats
+        5.8. corex.shm.report
+        5.9. corex.shm.stats
 
    6. Event Routes
 
@@ -249,10 +251,13 @@ modparam("corex", "alias_subdomains", "udp:sip-router.org:5060")
 
    The format of the value follows the SIP params style:
    "attr1=val1;attr2=val2;...". The attributes can be:
-     * type - it can be "A" (IPv4) or "AAAA" (IPv6)
+     * type - it can be "A" (IPv4), "AAAA" (IPv6) or "SRV"
      * name - the domain name
      * addr - the IP address
      * ttl - TTL value
+     * priority - priority value for SRV record
+     * weight - weight value for SRV record
+     * port - port value for SRV record
      * flags - can be: 1 - the domain is unresolvable (like blocklisted);
        2 - the record is permanent (never times out, never deleted, never
        overwritten)
@@ -748,7 +753,8 @@ event_route[dispatcher:dst-down] {
    5.5. corex.shm_summary
    5.6. corex.pkg_summary
    5.7. corex.shm.info
-   5.8. corex.shm.stats
+   5.8. corex.shm.report
+   5.9. corex.shm.stats
 
 5.1.  corex.debug
 
@@ -808,7 +814,14 @@ event_route[dispatcher:dst-down] {
    Example:
                 kamcli rpc shm.info
 
-5.8.  corex.shm.stats
+5.8.  corex.shm.report
+
+   Return shared memory manager usage report.
+
+   Example:
+                kamcli rpc shm.report
+
+5.9.  corex.shm.stats
 
    Return shared memory statistics (values are in bytes).
 
