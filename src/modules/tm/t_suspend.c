@@ -592,9 +592,8 @@ kill_trans:
 int t_continue(unsigned int hash_index, unsigned int label,
 		struct action *route)
 {
-	return t_continue_helper(hash_index, label, route, NULL, NULL, 0);
+	return t_continue_helper(hash_index, label, route, NULL, NULL, 1);
 }
-
 int t_continue_skip_timer(unsigned int hash_index, unsigned int label,
 		struct action *route)
 {
@@ -604,7 +603,7 @@ int t_continue_skip_timer(unsigned int hash_index, unsigned int label,
 int t_continue_cb(unsigned int hash_index, unsigned int label,
 		str *cbname, str *cbparam)
 {
-	return t_continue_helper(hash_index, label, NULL, cbname, cbparam, 1);
+	return t_continue_helper(hash_index, label, NULL, cbname, cbparam, 0);
 }
 
 /* Revoke the suspension of the SIP request, i.e.
