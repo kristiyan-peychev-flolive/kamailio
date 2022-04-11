@@ -4,6 +4,7 @@
 #include "../parser/contact/parse_contact.h"
 #include "../parser/parse_from.h"
 #include "../parser/parse_to.h"
+#include "../parser/parse_rr.h"
 #include "../parser/parse_refer_to.h"
 #include "../parser/parse_ppi_pai.h"
 #include "../parser/parse_privacy.h"
@@ -38,7 +39,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
     parse_to_uri(&orig_inv);
 
-    parse_contact_header(&orig_inv);
+    parse_contact_headers(&orig_inv);
 
     parse_refer_to_header(&orig_inv);
 
@@ -51,6 +52,10 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     parse_content_disposition(&orig_inv);
 
     parse_identityinfo_header(&orig_inv);
+
+    parse_record_route_headers(&orig_inv);
+
+    parse_route_headers(&orig_inv);
 
     str uri;
     get_src_uri(&orig_inv, 0, &uri);

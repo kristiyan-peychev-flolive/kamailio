@@ -93,8 +93,15 @@ static int corex_sip_reply_out(sr_event_param_t *evp);
 static pv_export_t mod_pvs[] = {
 	{ {"cfg", (sizeof("cfg")-1)}, PVT_OTHER, pv_get_cfg, 0,
 		pv_parse_cfg_name, 0, 0, 0 },
-
+	{ {"lsock", (sizeof("lsock")-1)}, PVT_OTHER, pv_get_lsock, 0,
+		pv_parse_lsock_name, 0, 0, 0 },
 	{ {0, 0}, 0, 0, 0, 0, 0, 0, 0 }
+};
+
+/* Exported functions */
+static tr_export_t mod_trans[] = {
+	{ {"sock", sizeof("sock") - 1}, tr_sock_parse },
+	{ {0, 0}, 0 }
 };
 
 static cmd_export_t cmds[]={
@@ -1365,5 +1372,6 @@ static sr_kemi_t sr_kemi_corex_exports[] = {
 int mod_register(char *path, int *dlflags, void *p1, void *p2)
 {
 	sr_kemi_modules_add(sr_kemi_corex_exports);
+	register_trans_mod(path, mod_trans);
 	return 0;
 }

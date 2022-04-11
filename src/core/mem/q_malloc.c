@@ -1028,6 +1028,14 @@ void qm_sums(void* qmp)
 			"-----------------------------\n");
 }
 
+#define QM_REPORT_SET(MREP, FRAG, FIELD) do { \
+		MREP->FIELD ## _size = FRAG->size; \
+		MREP->FIELD ## _file = FRAG->file; \
+		MREP->FIELD ## _func = FRAG->func; \
+		MREP->FIELD ## _mname = FRAG->mname; \
+		MREP->FIELD ## _line = FRAG->line; \
+	} while(0)
+
 void qm_report(void* qmp, mem_report_t *mrep)
 {
 	struct qm_block* qm;
@@ -1050,34 +1058,34 @@ void qm_report(void* qmp, mem_report_t *mrep)
 			mrep->free_frags++;
 			mrep->free_size_m += f->size;
 			if(mrep->max_free_frag_size==0) {
-				mrep->max_free_frag_size = f->size;
+				QM_REPORT_SET(mrep, f, max_free_frag);
 			} else {
 				if(f->size > mrep->max_free_frag_size) {
-					mrep->max_free_frag_size = f->size;
+					QM_REPORT_SET(mrep, f, max_free_frag);
 				}
 			}
 			if(mrep->min_free_frag_size==0) {
-				mrep->min_free_frag_size = f->size;
+				QM_REPORT_SET(mrep, f, min_free_frag);
 			} else {
 				if(f->size < mrep->min_free_frag_size) {
-					mrep->min_free_frag_size = f->size;
+					QM_REPORT_SET(mrep, f, min_free_frag);
 				}
 			}
 		} else {
 			mrep->used_frags++;
 			mrep->used_size_m += f->size;
 			if(mrep->max_used_frag_size==0) {
-				mrep->max_used_frag_size = f->size;
+				QM_REPORT_SET(mrep, f, max_used_frag);
 			} else {
 				if(f->size > mrep->max_used_frag_size) {
-					mrep->max_used_frag_size = f->size;
+					QM_REPORT_SET(mrep, f, max_used_frag);
 				}
 			}
 			if(mrep->min_used_frag_size==0) {
-				mrep->min_used_frag_size = f->size;
+				QM_REPORT_SET(mrep, f, min_used_frag);
 			} else {
 				if(f->size < mrep->min_used_frag_size) {
-					mrep->min_used_frag_size = f->size;
+					QM_REPORT_SET(mrep, f, min_used_frag);
 				}
 			}
 		}
@@ -1137,6 +1145,14 @@ void qm_mod_free_stats(void *qm_rootp)
 
 void qm_sums(void *qmp)
 {
+	LM_WARN("Enable DBG_QM_MALLOC for getting the status summary\n");
+	return;
+}
+
+void qm_report(void* qmp, mem_report_t *mrep)
+{
+	LM_WARN("Enable DBG_QM_MALLOC for getting the report\n");
+	memset(mrep, 0, sizeof(mem_report_t));
 	return;
 }
 

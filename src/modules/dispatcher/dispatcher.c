@@ -120,6 +120,8 @@ int ds_hash_check_interval = 30;
 int ds_timer_mode = 0;
 int ds_attrs_none = 0;
 int ds_load_mode = 0;
+uint32_t ds_dns_mode = DS_DNS_MODE_INIT;
+static int ds_dns_interval = 600;
 
 str ds_outbound_proxy = STR_NULL;
 
@@ -296,6 +298,8 @@ static param_export_t params[]={
 	{"ds_db_extra_attrs",  PARAM_STR, &ds_db_extra_attrs},
 	{"ds_load_mode",       PARAM_INT, &ds_load_mode},
 	{"reload_delta",       PARAM_INT, &ds_reload_delta },
+	{"ds_dns_mode",        PARAM_INT, &ds_dns_mode},
+	{"ds_dns_interval",    PARAM_INT, &ds_dns_interval},
 	{0,0,0}
 };
 
@@ -325,6 +329,15 @@ static int mod_init(void)
 	param_hooks_t phooks;
 	param_t *pit = NULL;
 
+	if(ds_dns_mode & DS_DNS_MODE_TIMER) {
+		if(ds_dns_interval<=0) {
+			LM_WARN("dns interval parameter not set - using 600\n");
+			ds_dns_interval = 600;
+		}
+		if(sr_wtimer_add(ds_dns_timer, NULL, ds_dns_interval) < 0) {
+			return -1;
+		}
+	}
 	if(ds_ping_active_init() < 0) {
 		return -1;
 	}
@@ -963,13 +976,15 @@ static int ds_reload(sip_msg_t *msg)
 	*ds_rpc_reload_time = time(NULL);
 
 	if(!ds_db_url.s) {
-		if(ds_load_list(dslistfile) != 0)
+		if(ds_load_list(dslistfile) != 0) {
 			LM_ERR("Error reloading from list\n");
-		return -1;
+			return -1;
+		}
 	} else {
-		if(ds_reload_db() < 0)
+		if(ds_reload_db() < 0) {
 			LM_ERR("Error reloading from db\n");
-		return -1;
+			return -1;
+		}
 	}
 	LM_DBG("reloaded dispatcher\n");
 	return 1;
@@ -1577,10 +1592,16 @@ static void dispatcher_rpc_reload(rpc_t *rpc, void *ctx)
 static const char *dispatcher_rpc_list_doc[2] = {
 		"Return the content of dispatcher sets", 0};
 
+
+#define DS_RPC_PRINT_NORMAL 1
+#define DS_RPC_PRINT_SHORT  2
+#define DS_RPC_PRINT_FULL   3
+
 /**
  *
  */
-int ds_rpc_print_set(ds_set_t *node, rpc_t *rpc, void *ctx, void *rpc_handle)
+int ds_rpc_print_set(ds_set_t *node, rpc_t *rpc, void *ctx, void *rpc_handle,
+		int mode)
 {
 	int i = 0, rc = 0;
 	void *rh;
@@ -1592,12 +1613,13 @@ int ds_rpc_print_set(ds_set_t *node, rpc_t *rpc, void *ctx, void *rpc_handle)
 	int j;
 	char c[3];
 	str data = STR_NULL;
+	char ipbuf[IP_ADDR_MAX_STRZ_SIZE];
 
 	if(!node)
 		return 0;
 
 	for(; i < 2; ++i) {
-		rc = ds_rpc_print_set(node->next[i], rpc, ctx, rpc_handle);
+		rc = ds_rpc_print_set(node->next[i], rpc, ctx, rpc_handle, mode);
 		if(rc != 0)
 			return rc;
 	}
@@ -1632,11 +1654,28 @@ int ds_rpc_print_set(ds_set_t *node, rpc_t *rpc, void *ctx, void *rpc_handle)
 		else
 			c[1] = 'X';
 
-		if(node->dlist[j].attrs.body.s) {
-			if(rpc->struct_add(vh, "Ssd{", "URI", &node->dlist[j].uri,
-					"FLAGS", c,
-					"PRIORITY", node->dlist[j].priority,
-					"ATTRS", &wh) < 0) {
+		if(rpc->struct_add(vh, "Ssd", "URI", &node->dlist[j].uri, "FLAGS",
+				   c, "PRIORITY", node->dlist[j].priority)
+				< 0) {
+			rpc->fault(ctx, 500, "Internal error creating dest struct");
+			return -1;
+		}
+
+		if(mode == DS_RPC_PRINT_FULL) {
+			ipbuf[0] = '\0';
+			ip_addr2sbufz(&node->dlist[j].ip_address, ipbuf, IP_ADDR_MAX_STRZ_SIZE);
+			if(rpc->struct_add(vh, "Ssddjj", "HOST", &node->dlist[j].host,
+						"IPADDR", ipbuf, "PORT", (int)node->dlist[j].port,
+						"PROTOID", (int)node->dlist[j].proto,
+						"DNSTIME_SEC", (unsigned long)node->dlist[j].dnstime.tv_sec,
+						"DNSTIME_USEC", (unsigned long)node->dlist[j].dnstime.tv_usec) < 0) {
+				rpc->fault(ctx, 500, "Internal error creating dest struct");
+				return -1;
+			}
+		}
+
+		if(mode != DS_RPC_PRINT_SHORT && node->dlist[j].attrs.body.s!=NULL) {
+			if(rpc->struct_add(vh, "{", "ATTRS", &wh) < 0) {
 				rpc->fault(ctx, 500, "Internal error creating dest struct");
 				return -1;
 			}
@@ -1655,13 +1694,6 @@ int ds_rpc_print_set(ds_set_t *node, rpc_t *rpc, void *ctx, void *rpc_handle)
 									? &(node->dlist[j].attrs.obproxy) : &data)
 					< 0) {
 				rpc->fault(ctx, 500, "Internal error creating attrs struct");
-				return -1;
-			}
-		} else {
-			if(rpc->struct_add(vh, "Ssd", "URI", &node->dlist[j].uri, "FLAGS",
-					   c, "PRIORITY", node->dlist[j].priority)
-					< 0) {
-				rpc->fault(ctx, 500, "Internal error creating dest struct");
 				return -1;
 			}
 		}
@@ -1702,6 +1734,18 @@ static void dispatcher_rpc_list(rpc_t *rpc, void *ctx)
 {
 	void *th;
 	void *ih;
+	int n;
+	str smode;
+	int vmode = DS_RPC_PRINT_NORMAL;
+
+	n = rpc->scan(ctx, "*S", &smode);
+	if(n == 1) {
+		if(smode.len==5 && strncasecmp(smode.s, "short", 5)==0) {
+			vmode = DS_RPC_PRINT_SHORT;
+		} else if(smode.len==4 && strncasecmp(smode.s, "full", 4)==0) {
+			vmode = DS_RPC_PRINT_FULL;
+		}
+	}
 
 	ds_set_t *dslist = ds_get_list();
 	int dslistnr = ds_get_list_nr();
@@ -1722,7 +1766,7 @@ static void dispatcher_rpc_list(rpc_t *rpc, void *ctx)
 		return;
 	}
 
-	ds_rpc_print_set(dslist, rpc, ctx, ih);
+	ds_rpc_print_set(dslist, rpc, ctx, ih, vmode);
 
 	return;
 }
@@ -1865,7 +1909,7 @@ static const char *dispatcher_rpc_add_doc[2] = {
  */
 static void dispatcher_rpc_add(rpc_t *rpc, void *ctx)
 {
-	int group, flags, nparams;
+	int group, flags, priority, nparams;
 	str dest;
 	str attrs = STR_NULL;
 
@@ -1882,17 +1926,18 @@ static void dispatcher_rpc_add(rpc_t *rpc, void *ctx)
 	*ds_rpc_reload_time = time(NULL);
 
 	flags = 0;
+	priority = 0;
 
-	nparams = rpc->scan(ctx, "dS*dS", &group, &dest, &flags, &attrs);
+	nparams = rpc->scan(ctx, "dS*ddS", &group, &dest, &flags, &priority, &attrs);
 	if(nparams < 2) {
 		rpc->fault(ctx, 500, "Invalid Parameters");
 		return;
-	} else if (nparams <= 3) {
+	} else if (nparams <= 4) {
 		attrs.s = 0;
 		attrs.len = 0;
 	}
 
-	if(ds_add_dst(group, &dest, flags, &attrs) != 0) {
+	if(ds_add_dst(group, &dest, flags, priority, &attrs) != 0) {
 		rpc->fault(ctx, 500, "Adding dispatcher dst failed");
 		return;
 	}

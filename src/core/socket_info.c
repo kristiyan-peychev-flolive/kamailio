@@ -762,6 +762,54 @@ found:
 	return si;
 }
 
+/**
+ *
+ */
+static int _ksr_sockets_no = 0;
+
+/**
+ *
+ */
+int ksr_sockets_no_get(void)
+{
+	return _ksr_sockets_no;
+}
+
+/**
+ *
+ */
+void ksr_sockets_index(void)
+{
+	socket_info_t *si = NULL;
+	struct socket_info** list;
+	unsigned short c_proto;
+
+	if(_ksr_sockets_no > 0) {
+		return;
+	}
+
+	c_proto = PROTO_UDP;
+	do {
+		/* get the proper sock_list */
+		list=get_sock_info_list(c_proto);
+
+		if (list==0) {
+			/* disabled or unknown protocol */
+			continue;
+		}
+
+		for (si=*list; si; si=si->next) {
+			if(si->sockname.s == NULL) {
+				continue;
+			}
+			si->gindex = _ksr_sockets_no;
+			_ksr_sockets_no++;
+		}
+	} while((c_proto = next_proto(c_proto))!=0);
+
+	LM_DBG("number of listen sockets: %d\n", _ksr_sockets_no);
+}
+
 socket_info_t* ksr_get_socket_by_name(str *sockname)
 {
 	socket_info_t *si = NULL;
@@ -788,6 +836,74 @@ socket_info_t* ksr_get_socket_by_name(str *sockname)
 			if (sockname->len == si->sockname.len
 					&& strncasecmp(sockname->s, si->sockname.s,
 							sockname->len)==0) {
+				return si;
+			}
+		}
+	} while((c_proto = next_proto(c_proto))!=0);
+
+	return NULL;
+}
+
+socket_info_t* ksr_get_socket_by_listen(str *sockstr)
+{
+	socket_info_t *si = NULL;
+	struct socket_info** list;
+	unsigned short c_proto;
+
+	c_proto = PROTO_UDP;
+	do {
+		/* get the proper sock_list */
+		list=get_sock_info_list(c_proto);
+
+		if (list==0) {
+			/* disabled or unknown protocol */
+			continue;
+		}
+
+		for (si=*list; si; si=si->next) {
+			if(si->sock_str.s == NULL) {
+				continue;
+			}
+			LM_DBG("checking if listen %.*s matches %.*s\n",
+					sockstr->len, sockstr->s,
+					si->sock_str.len, si->sock_str.s);
+			if (sockstr->len == si->sock_str.len
+					&& strncasecmp(sockstr->s, si->sock_str.s,
+							sockstr->len)==0) {
+				return si;
+			}
+		}
+	} while((c_proto = next_proto(c_proto))!=0);
+
+	return NULL;
+}
+
+socket_info_t* ksr_get_socket_by_advertise(str *sockstr)
+{
+	socket_info_t *si = NULL;
+	struct socket_info** list;
+	unsigned short c_proto;
+
+	c_proto = PROTO_UDP;
+	do {
+		/* get the proper sock_list */
+		list=get_sock_info_list(c_proto);
+
+		if (list==0) {
+			/* disabled or unknown protocol */
+			continue;
+		}
+
+		for (si=*list; si; si=si->next) {
+			if(si->useinfo.sock_str.s == NULL) {
+				continue;
+			}
+			LM_DBG("checking if listen %.*s matches %.*s\n",
+					sockstr->len, sockstr->s,
+					si->useinfo.sock_str.len, si->useinfo.sock_str.s);
+			if (sockstr->len == si->useinfo.sock_str.len
+					&& strncasecmp(sockstr->s, si->useinfo.sock_str.s,
+							sockstr->len)==0) {
 				return si;
 			}
 		}
@@ -1333,6 +1449,7 @@ static int build_iface_list(void)
 					case IFA_LABEL:
 						LM_DBG("iface name is %s\n", (char*)RTA_DATA(rtap));
 						strncpy(name, (char*)RTA_DATA(rtap), MAX_IF_LEN-1);
+						name[MAX_IF_LEN-1] = '\0';
 						break;
 					case IFA_BROADCAST:
 					case IFA_ANYCAST:
@@ -2270,11 +2387,14 @@ int parse_protohostport(str* ins, sr_phostp_t *r)
 	if (second) { /* 2 ':' found => check if valid */
 		if (parse_proto((unsigned char*)ins->s, first-ins->s, &r->proto)<0)
 			goto error_proto;
+		r->sproto.s = ins->s;
+		r->sproto.len = first-ins->s;
 
 		tmp.s=second+1;
 		tmp.len=(ins->s + ins->len) - tmp.s;
 
 		if (str2int(&tmp, (unsigned int *)&(r->port))<0) goto error_port;
+		r->sport = tmp;
 
 		r->host.s=first+1;
 		r->host.len=(int)(second-r->host.s);
@@ -2287,10 +2407,13 @@ int parse_protohostport(str* ins, sr_phostp_t *r)
 		/* invalid port => it's proto:host */
 		if (parse_proto((unsigned char*)ins->s, first-ins->s, &r->proto)<0)
 			goto error_proto;
+		r->sproto.s = ins->s;
+		r->sproto.len = first-ins->s;
 		r->host.s=first+1;
 		r->host.len=(int)(p-r->host.s);
 	}else{
 		/* valid port => its host:port */
+		r->sport = tmp;
 		r->host.s=ins->s;
 		r->host.len=(int)(first-r->host.s);
 	}
