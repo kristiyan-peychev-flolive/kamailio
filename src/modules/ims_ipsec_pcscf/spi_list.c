@@ -50,51 +50,52 @@ void destroy_list(spi_list_t* lst)
 	lst->tail = NULL;
 }
 
-int spi_add(spi_list_t* list, uint32_t spi_cid , uint32_t spi_sid , uint16_t sport , uint16_t cport)
+int spi_add(spi_list_t* list, uint32_t spi_cid, uint32_t spi_sid, uint16_t sport, uint16_t cport)
 {
 	if(!list){
-        return 0;
+		return 1;
 	}
 
 	// create new node
 	spi_node_t* n = shm_malloc(sizeof(spi_node_t));
     if(!n)
-        return 0;
+        return 1;
 
     n->next = NULL;
     n->spi_cid = spi_cid;
     n->spi_sid = spi_sid;
-    n->sport = sport;
-    n->cport = cport;
+    n->sport   = sport;
+    n->cport   = cport;
 
     //when list is empty
     if(!list->head) {
         list->head = n;
         list->tail = n;
-        return 1;
+        return 0;
     }
 
     list->tail->next = n;
     list->tail = n;
-    return 1;
 
+    return 0;
 }
 
 int spi_remove_head(spi_list_t* list)
 {
-    if(!list){
-        return 0;
+    if(!list) {
+        return 1;
     }
 
     //when list is empty
     if(!list->head) {
-        return 0;
+        return 1;
     }
 
     spi_node_t* t = list->head;
     list->head = t->next;
     shm_free(t);
-    return 1;
+
+    return 0;
 }
 
 int spi_remove(spi_list_t* list, uint32_t spi_cid, uint32_t spi_sid)
@@ -149,7 +150,7 @@ int spi_remove(spi_list_t* list, uint32_t spi_cid, uint32_t spi_sid)
     return -1; // out of scope
 }
 
-int spi_in_list(spi_list_t* list, uint32_t spi_cid , uint32_t spi_sid)
+int spi_in_list(spi_list_t* list, uint32_t spi_cid, uint32_t spi_sid)
 {
 	if(!list){
 		return 0;
@@ -160,8 +161,9 @@ int spi_in_list(spi_list_t* list, uint32_t spi_cid , uint32_t spi_sid)
 
     spi_node_t* n = list->head;
     while(n) {
-        if (n->spi_cid == spi_cid && n->spi_sid == spi_sid)
-            return 1;        
+        if (n->spi_cid == spi_cid && n->spi_sid == spi_sid) {
+            return 1;
+        }
         n = n->next;
     }
 

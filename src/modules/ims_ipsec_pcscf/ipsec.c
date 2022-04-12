@@ -197,15 +197,15 @@ int add_sa(struct mnl_socket* nl_sock, const struct ip_addr *src_addr_param, con
 
     // add encription algorithm for this SA
     l_enc_algo = (struct xfrm_algo *)l_enc_algo_buf;
-    if(strncasecmp(r_ealg.s, "aes-cbc", r_ealg.len) == 0) {
+    if (strncasecmp(r_ealg.s,"aes-cbc",r_ealg.len) == 0) {
         strcpy(l_enc_algo->alg_name,"aes");
-    	l_enc_algo->alg_key_len = ck.len * 4;
-    	string_to_key(l_enc_algo->alg_key, ck);
+        l_enc_algo->alg_key_len = ck.len * 4;
+        string_to_key(l_enc_algo->alg_key, ck);
     }
-    else if(strncasecmp(r_ealg.s, "des-ede3-cbc", r_ealg.len) == 0) {
+    else if (strncasecmp(r_ealg.s,"des-ede3-cbc",r_ealg.len) == 0) {
         strcpy(l_enc_algo->alg_name,"des3_ede");
-    	l_enc_algo->alg_key_len = ck.len * 4;
-    	string_to_key(l_enc_algo->alg_key, ck);
+        l_enc_algo->alg_key_len = ck.len * 4;
+        string_to_key(l_enc_algo->alg_key, ck);
     } else {
         // set default algorithm to null
         strcpy(l_enc_algo->alg_name,"cipher_null");
@@ -805,7 +805,7 @@ static int delete_unused_sa_cb(const struct nlmsghdr *nlh, void *data)
 
     // NOTE: Release the Proxy SPIs and Ports only here. Do not release the same SPIs and ports in delete unsused policy callback.
     // Release SPIs
-    release_spi(ipsec.spi_pc , ipsec.spi_ps , ipsec.port_pc , ipsec.port_ps);
+    release_spi(ipsec.spi_pc, ipsec.spi_ps, ipsec.port_pc, ipsec.port_ps);
     return MNL_CB_OK;
 }
 

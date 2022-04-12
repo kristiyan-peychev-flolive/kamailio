@@ -300,12 +300,13 @@ static int mod_init(void) {
 	}
 
 	int res = 0;
-    if((res = init_spi_gen(spi_id_start, spi_id_range, ipsec_server_port, ipsec_client_port,ipsec_max_connections)) != 0) {
+    if((res = init_spi_gen(spi_id_start, spi_id_range, ipsec_server_port, ipsec_client_port, ipsec_max_connections)) != 0) {
 		LM_ERR("Error initialising spi generator. Error: %d\n", res);
 		return -1;
 	}
 
 	init_flag = 1;
+
 	return 0;
 }
 

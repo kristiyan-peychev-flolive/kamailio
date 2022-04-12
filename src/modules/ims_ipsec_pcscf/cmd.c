@@ -351,10 +351,8 @@ static int update_contact_ipsec_params(ipsec_t* s, const struct sip_msg* m, ipse
     s->ik.len = ik.len;
 
     // Generate SPI
-    if(s_old)
-    {
-        if(s_old->spi_pc && s_old->spi_ps && s_old->port_pc && s_old->port_ps)
-        {
+    if(s_old) {
+        if(s_old->spi_pc && s_old->spi_ps && s_old->port_pc && s_old->port_ps) {
             LM_ERR("Error using old IPSEC tunnel creation\n");
             s->spi_pc = s_old->spi_pc;
             s->spi_ps = s_old->spi_ps;
@@ -364,7 +362,7 @@ static int update_contact_ipsec_params(ipsec_t* s, const struct sip_msg* m, ipse
         }
     }
 
-    if(acquire_spi(&s->spi_pc , &s->spi_ps , &s->port_pc , &s->port_ps) == 0) {
+    if(acquire_spi(&s->spi_pc, &s->spi_ps, &s->port_pc, &s->port_ps) == 0) {
         LM_ERR("Error generating client SPI for IPSEC tunnel creation\n");
         shm_free(s->ck.s);
         s->ck.s = NULL; s->ck.len = 0;
@@ -479,7 +477,7 @@ static int destroy_ipsec_tunnel(str remote_addr, ipsec_t* s, unsigned short rece
     remove_policy(sock, remote_addr, ipsec_addr, s->port_us, s->port_pc, s->spi_pc, ip_addr.af, IPSEC_POLICY_DIRECTION_IN);
 
     // Release SPIs
-    release_spi(s->spi_pc , s->spi_ps , s->port_pc , s->port_ps);
+    release_spi(s->spi_pc, s->spi_ps, s->port_pc, s->port_ps);
 
     close_mnl_socket(sock);
     return 0;
@@ -617,9 +615,6 @@ int ipsec_create(struct sip_msg* m, udomain_t* d, int _cflags)
     struct pcontact_info ci;
     int ret = IPSEC_CMD_FAIL;   // FAIL by default
 
-    ci.reg_state = PCONTACT_ANY;
-    ci.num_service_routes = 0;
-
     // Find the contact
     if(fill_contact(&ci, m) != 0) {
         LM_ERR("Error filling in contact data\n");
@@ -638,8 +633,13 @@ int ipsec_create(struct sip_msg* m, udomain_t* d, int _cflags)
     }
 
     // Get security parameters
-    if(pcontact->security_temp == NULL || pcontact->security_temp->type != SECURITY_IPSEC) {
+    if(pcontact->security_temp == NULL) {
         LM_ERR("No security parameters found in contact\n");
+        goto cleanup;
+    }
+
+    if(pcontact->security_temp->type != SECURITY_IPSEC ) {
+        LM_ERR("Unsupported security type: %d\n", pcontact->security_temp->type);
         goto cleanup;
     }
 
@@ -652,82 +652,67 @@ int ipsec_create(struct sip_msg* m, udomain_t* d, int _cflags)
 
     struct sip_msg* req = t->uas.request;
 
-
-        security_t* req_sec_params = NULL;
-        req_sec_params = cscf_get_security(req);
-
+    // Parse security parameters from the REGISTER request and get some data for the new tunnels
+    security_t* req_sec_params = cscf_get_security(req);
+    ipsec_t* s;
+    ipsec_t* old_s = NULL;
 
     // Update contacts only for initial registration, for re-registration the existing contacts shouldn't be updated.
-    if(ci.via_port == SIP_PORT && req_sec_params == NULL){
+    if(ci.via_port == SIP_PORT){
         LM_DBG("Registration for contact with AOR [%.*s], VIA [%d://%.*s:%d], received_host [%d://%.*s:%d]\n",
                 ci.aor.len, ci.aor.s, ci.via_prot, ci.via_host.len, ci.via_host.s, ci.via_port,
                 ci.received_proto, ci.received_host.len, ci.received_host.s, ci.received_port);
 
-        ipsec_t* s = pcontact->security_temp->data.ipsec;
-
-		// for initial Registration use a new P-CSCF server port
-        if(update_contact_ipsec_params(s, m, NULL) != 0) {
-            goto cleanup;
-        }
-
-        if(create_ipsec_tunnel(&req->rcv.src_ip, s) != 0){
-            goto cleanup;
-        }
-
-        if (ul.update_pcontact(d, &ci, pcontact) != 0){
-            LM_ERR("Error updating contact\n");
-            goto cleanup;
-        }
-
-        // Update temp security parameters
-        if(ul.update_temp_security(d, pcontact->security_temp->type, pcontact->security_temp, pcontact) != 0){
-            LM_ERR("Error updating temp security\n");
-        }
-
-        if(add_supported_secagree_header(m) != 0) {
-            goto cleanup;
-        }
-
-        if(add_security_server_header(m, s) != 0) {
-            goto cleanup;
-        }
-
-        if(ul.register_ulcb(pcontact, PCSCF_CONTACT_EXPIRE|PCSCF_CONTACT_DELETE, ipsec_on_expire, (void*)&pcontact->received_port) != 1) {
-            LM_ERR("Error subscribing for contact\n");
-            goto cleanup;
-        }
+        if(req_sec_params == NULL)
+            s = pcontact->security_temp->data.ipsec;
+        else
+            s = req_sec_params->data.ipsec;
     }else{
         LM_DBG("RE-Registration for contact with AOR [%.*s], VIA [%d://%.*s:%d], received_host [%d://%.*s:%d]\n",
                 ci.aor.len, ci.aor.s, ci.via_prot, ci.via_host.len, ci.via_host.s, ci.via_port,
                 ci.received_proto, ci.received_host.len, ci.received_host.s, ci.received_port);
-        
-        security_t* req_sec_params = NULL;
 
-        // Parse security parameters from the REGISTER request and get some data for the new tunnels
-        if((req_sec_params = cscf_get_security(req)) == NULL) {
+        if(req_sec_params == NULL) {
             LM_CRIT("No security parameters in REGISTER request\n");
             goto cleanup;
         }
 
-		// for Re-Registration use the same P-CSCF server port if 'ipsec reuse server port' is enabled
-        if(update_contact_ipsec_params(req_sec_params->data.ipsec, m, (ipsec_reuse_server_port && pcontact->security_temp) ? pcontact->security_temp->data.ipsec : NULL) != 0) {
-            goto cleanup;
-        }
+        s = req_sec_params->data.ipsec;
+        old_s = (ipsec_reuse_server_port && pcontact->security_temp) ? pcontact->security_temp->data.ipsec : NULL;
+    }
 
-        if(create_ipsec_tunnel(&req->rcv.src_ip, req_sec_params->data.ipsec) != 0){
-            goto cleanup;
-        }
+    if(update_contact_ipsec_params(s, m, old_s) != 0) {
+        goto cleanup;
+    }
 
-        if (ul.update_pcontact(d, &ci, pcontact) != 0){
-            LM_ERR("Error updating contact\n");
-            goto cleanup;
-        }
+    if(create_ipsec_tunnel(&req->rcv.src_ip, s) != 0){
+        goto cleanup;
+    }
 
-        if(add_supported_secagree_header(m) != 0) {
-            goto cleanup;
-        }
+    if (ul.update_pcontact(d, &ci, pcontact) != 0){
+        LM_ERR("Error updating contact\n");
+        goto cleanup;
+    }
 
-        if(add_security_server_header(m, req_sec_params->data.ipsec) != 0) {
+    if(ci.via_port == SIP_PORT){
+        // Update temp security parameters
+        if(ul.update_temp_security(d, pcontact->security_temp->type, pcontact->security_temp, pcontact) != 0){
+            LM_ERR("Error updating temp security\n");
+        }
+    }
+
+
+    if(add_supported_secagree_header(m) != 0) {
+        goto cleanup;
+    }
+
+    if(add_security_server_header(m, s) != 0) {
+        goto cleanup;
+    }
+
+    if(ci.via_port == SIP_PORT){
+        if(ul.register_ulcb(pcontact, PCSCF_CONTACT_EXPIRE|PCSCF_CONTACT_DELETE, ipsec_on_expire, (void*)&pcontact->received_port) != 1) {
+            LM_ERR("Error subscribing for contact\n");
             goto cleanup;
         }
     }
@@ -751,9 +736,6 @@ int ipsec_forward(struct sip_msg* m, udomain_t* d, int _cflags)
     unsigned short dst_port = 0;
     unsigned short src_port = 0;
     ip_addr_t via_host;
-    
-    ci.reg_state = PCONTACT_ANY;
-    ci.num_service_routes = 0;
     
     struct sip_msg* req = NULL;
     if(m->first_line.type == SIP_REPLY) {
@@ -819,19 +801,6 @@ int ipsec_forward(struct sip_msg* m, udomain_t* d, int _cflags)
 
     char buf[1024];
     if(m->first_line.type == SIP_REPLY){
-/*
-        // for Reply get the dest proto from the received request
-        dst_proto = req->rcv.proto;
-
-        // Check send socket
-        struct socket_info * client_sock = grep_sock_info(via_host.af == AF_INET ? &ipsec_listen_addr : &ipsec_listen_addr6, src_port, dst_proto);
-        if(client_sock) {
-            // for Reply and TCP sends from P-CSCF server port, for Reply and UDP sends from P-CSCF client port
-            src_port = dst_proto == PROTO_TCP ? s->port_ps : s->port_pc;
-
-        // for Reply and TCP sends to UE client port, for Reply and UDP sends to UE server port
-        dst_port = dst_proto == PROTO_TCP ? s->port_uc : s->port_us;
-*/
         // for Reply get the dest proto from the received request
         dst_proto = req->rcv.proto;
 

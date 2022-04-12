@@ -75,7 +75,10 @@ static int process_sec_agree_param(str name, str value, ipsec_t *ret, char *alg_
 
     if(strncasecmp(name.s, "alg", name.len) == 0) {
         SEC_COPY_STR_PARAM(ret->r_alg, value);
-        if(strncasecmp(value.s, "hmac-sha-1-96", value.len) == 0) *alg_found = 1;
+
+        if(strncasecmp(value.s, "hmac-sha-1-96", value.len) == 0) {
+            *alg_found = 1;
+        }
     }
     else if(strncasecmp(name.s, "prot", name.len) == 0) {
         SEC_COPY_STR_PARAM(ret->prot, value);
@@ -85,7 +88,10 @@ static int process_sec_agree_param(str name, str value, ipsec_t *ret, char *alg_
     }
     else if(strncasecmp(name.s, "ealg", name.len) == 0) {
         SEC_COPY_STR_PARAM(ret->r_ealg, value);
-        if(strncasecmp(value.s, "aes-cbc", value.len) == 0) *ealg_found = 1;
+
+        if(strncasecmp(value.s, "aes-cbc", value.len) == 0) {
+            *ealg_found = 1;
+        }
     }
     else if(strncasecmp(name.s, "spi-c", name.len) == 0) {
         ret->spi_uc = parse_digits(value);
@@ -159,7 +165,7 @@ static security_t* parse_sec_agree(struct hdr_field* h)
     body.s=body.s+i+1;
     body.len=body.len-i-1;
 
-    char preferred_alg_found = 0;
+    char preferred_alg_found  = 0;
     char preferred_ealg_found = 0;
 
     // get the rest of the parameters
@@ -172,7 +178,7 @@ static security_t* parse_sec_agree(struct hdr_field* h)
                 // and now i points to the end of its value
                 value.s = body.s;
                 value.len = i;
-           }
+            }
             //else - name is not read but there is a value
             //so there is some error - skip ahead
             body.s=body.s+i+1;
@@ -182,21 +188,24 @@ static security_t* parse_sec_agree(struct hdr_field* h)
 
             if(name.len && value.len) {
                 if(strncasecmp(name.s, "alg", name.len) == 0) {
-                    if(preferred_alg_found && preferred_ealg_found)
+                    if(preferred_alg_found && preferred_ealg_found) {
                         break;
+                    }
                     preferred_alg_found = 0;
                     preferred_ealg_found = 0;
                 }
  
-                char alg_found = 0;
+                char alg_found  = 0;
                 char ealg_found = 0;
                 if(process_sec_agree_param(name, value, params->data.ipsec, &alg_found, &ealg_found)) {
                     goto cleanup;
                 }
-                if(alg_found)
+                if(alg_found) {
                     preferred_alg_found = 1;
-                if(ealg_found)
+                }
+                if(ealg_found) {
                     preferred_ealg_found = 1;
+                }
             }
             //else - something's wrong. Ignore!
 
